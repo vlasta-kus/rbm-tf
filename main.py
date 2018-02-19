@@ -1,7 +1,10 @@
 import os
 import tensorflow as tf
-import matplotlib.pyplot as plt
 import collections
+
+import matplotlib  
+matplotlib.use('TkAgg')  
+import matplotlib.pyplot as plt
 
 from rbm import RBM
 from au import AutoEncoder
@@ -48,7 +51,7 @@ trX, teX = dataset.train.getNumpyRepresentation(), dataset.test.getNumpyRepresen
 visualise = False
 print_step = 100
 #architecture = [2000, 500, 250, 100, 20]
-architecture = [60, 140, 40, 30, 10]
+architecture = [60, 140, 40, 30, 20]
 rbmobject1 = RBM(architecture[0], architecture[1], ['rbmw1', 'rbvb1', 'rbmhb1'], 0.3)
 rbmobject2 = RBM(architecture[1], architecture[2], ['rbmw2', 'rbvb2', 'rbmhb2'], 0.3)
 rbmobject3 = RBM(architecture[2], architecture[3], ['rbmw3', 'rbvb3', 'rbmhb3'], 0.3)
