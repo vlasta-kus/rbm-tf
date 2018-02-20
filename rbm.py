@@ -13,10 +13,10 @@ class RBM(object):
         self.weights = network_weights
 
         # placeholders
-        self.x = tf.placeholder(tf.float32, [None, self.n_input])
-        self.rbm_w = tf.placeholder(tf.float32,[self.n_input, self.n_hidden])
-        self.rbm_vb = tf.placeholder(tf.float32,[self.n_input])
-        self.rbm_hb = tf.placeholder(tf.float32,[self.n_hidden])
+        self.x = tf.placeholder(tf.float32, [None, self.n_input], name="x_in")
+        self.rbm_w = tf.placeholder(tf.float32,[self.n_input, self.n_hidden], name="rbm_w")
+        self.rbm_vb = tf.placeholder(tf.float32,[self.n_input], name="rbm_vb_" + layer_names[0])
+        self.rbm_hb = tf.placeholder(tf.float32,[self.n_hidden], name="rbm_hb")
 
         # variables
         # The weights are initialized to small random values chosen from a zero-mean Gaussian with a
@@ -64,10 +64,25 @@ class RBM(object):
 
         # cost
         self.err_sum = tf.reduce_mean(tf.square(self.x - self.v_sample))
+        self.summary_cost = tf.summary.scalar('cost_' + layer_names[0], self.err_sum)
 
         init = tf.global_variables_initializer()
         self.sess = tf.Session()
         self.sess.run(init)
+
+        # for TensorBoard
+        #self.merged_summaries = tf.summary.merge_all() # merge all the summaries and write them out
+        self.logger = None
+        #self.logger = tf.summary.FileWriter("log/", self.sess.graph)
+
+    #def __del__(self):
+    #    try:
+    #        self.logger.flush()
+    #        self.logger.close()
+    #    except(AttributeError): # not logging
+    #        pass
+    def setSummaryWriter(self, logger):
+        self.logger = logger
 
     def compute_cost(self, batch):
         # Use it but don?t trust it. If you really want to know what is going on use multiple histograms.
@@ -120,16 +135,19 @@ class RBM(object):
     def return_hidden_weight_as_np(self):
         return self.n_w
 
-    def partial_fit(self, batch_x):
+    def partial_fit(self, batch_x, tot_updates):
         # 1. always use small ?mini-batches? of 10 to 100 cases.
         #    For big data with lot of classes use mini-batches of size about 10.
         self.n_w, self.n_vb, self.n_hb = self.sess.run([self.update_w, self.update_vb, self.update_hb],
-                                                       feed_dict={self.x: batch_x, self.rbm_w: self.o_w,
-                                                                  self.rbm_vb: self.o_vb, self.rbm_hb: self.o_hb})
+                                                       feed_dict={self.x: batch_x, self.rbm_w: self.o_w, self.rbm_vb: self.o_vb, self.rbm_hb: self.o_hb})
 
         self.o_w = self.n_w
         self.o_vb = self.n_vb
         self.o_hb = self.n_hb
 
-        return self.sess.run(self.err_sum, feed_dict={self.x: batch_x, self.rbm_w: self.n_w, self.rbm_vb: self.n_vb,
-                                                      self.rbm_hb: self.n_hb})
+        #err_sum = self.sess.run(self.err_sum, feed_dict={self.x: batch_x, self.rbm_w: self.n_w, self.rbm_vb: self.n_vb, self.rbm_hb: self.n_hb})
+        err_sum, summary = self.sess.run([self.err_sum, self.summary_cost], feed_dict={self.x: batch_x, self.rbm_w: self.n_w, self.rbm_vb: self.n_vb, self.rbm_hb: self.n_hb})
+        if self.logger:
+            self.logger.add_summary(summary, tot_updates)
+
+        return err_sum

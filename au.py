@@ -15,7 +15,7 @@ class AutoEncoder(object):
         self.step = 0
 
         # Build the encoding layers
-        self.x = tf.placeholder("float", [None, input_size])
+        self.x = tf.placeholder("float", [None, input_size], name="x_in")
         next_layer_input = self.x
 
         assert len(layer_sizes) == len(layer_names)
@@ -72,18 +72,36 @@ class AutoEncoder(object):
         # the fully encoded and reconstructed value of x is here:
         self.reconstructed_x = next_layer_input
 
-        # compute cost
+        # compute cost and run optimizer
+        self.total_updates = tf.Variable(0, trainable=False)
         self.cost = tf.sqrt(tf.reduce_mean(tf.square(self.x - self.reconstructed_x)))
-        self.optimizer = optimizer.minimize(self.cost)
+        self.optimizer = optimizer.minimize(self.cost, global_step=self.total_updates)
+        self.summary_cost = tf.summary.scalar('cost', self.cost)
 
         # compute MSE and cosine similarity
         self.mse = tf.losses.mean_squared_error(self.reconstructed_x, self.x)
         self.cosSim = self.cosSim(self.reconstructed_x, self.x)
+        self.summary_mse = tf.summary.scalar('MSE', self.mse)
+        self.summary_cossim = tf.summary.scalar('cosine_similarity', self.cosSim)
 
         # initalize variables
         init = tf.global_variables_initializer()
         self.sess = tf.Session()
         self.sess.run(init)
+
+        # for TensorBoard
+        #self.merged_summaries = tf.summary.merge_all() # merge all the summaries and write them out
+        self.logger = tf.summary.FileWriter("log/", self.sess.graph)
+
+    def __del__(self):
+        try:
+            self.logger.flush()
+            self.logger.close()
+        except(AttributeError): # not logging
+            pass
+
+    def getSummaryWriter(self):
+        return self.logger
 
     def transform(self, X):
         return self.sess.run(self.encoded_x, {self.x: X})
@@ -134,5 +152,12 @@ class AutoEncoder(object):
         return dict_w
 
     def partial_fit(self, X):
-        cost, opt = self.sess.run((self.cost, self.optimizer), feed_dict={self.x: X})
+        to_run = [self.cost, self.optimizer, self.total_updates,
+                    self.summary_cost, self.summary_mse, self.summary_cossim]
+        cost, opt, total_updates, summ_cost, summ_mse, summ_cossim = self.sess.run(to_run, feed_dict={self.x: X})
+        self.logger.add_summary(summ_cost, total_updates)
+        self.logger.add_summary(summ_mse, total_updates)
+        self.logger.add_summary(summ_cossim, total_updates)
+        #cost, opt, summary, total_updates = self.sess.run((self.cost, self.optimizer, self.merged_summaries, self.total_updates), feed_dict={self.x: X})
+        #self.logger.add_summary(summary, total_updates)
         return cost
