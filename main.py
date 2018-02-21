@@ -4,8 +4,8 @@ from NeoInterface import NeoInterface
 from DataFromTxt import DataFromTxt
 
 
-node_label = "TestText"
-id__data_to_process = -1
+node_label = "Lesson" #"TestText"
+id__data_to_process = 219132
 
 # Neo4j handler
 neo = NeoInterface()
@@ -22,9 +22,10 @@ neo.trainDataFromNeo(node_label, file_with_train_data)
 model = AEModel()
 
 ### Training
-model.train(file_with_train_data, save=True) # train & save
+#model.train(file_with_train_data, save=True) # train & save
 
 ### Predict
-#IDs, data = documentFromNeo(id__data_to_process, node_label) # retrieve data as a numpy ndarray
-#prediction = model.predict(data) # load model & predict
-#neo.vectorsToNeoNode('nn_encoded_vector', IDs, data)
+IDs, data = neo.documentFromNeo(id__data_to_process, node_label) # retrieve data as a numpy ndarray
+if data.size > 0:
+    predictions = model.predict(data) # load model & predict
+    neo.vectorsToNeoNode('nn_encoded_vector', IDs, predictions)

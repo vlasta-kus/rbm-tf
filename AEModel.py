@@ -1,13 +1,14 @@
 import os
-import tensorflow as tf
 import collections
+import tensorflow as tf
+import numpy as np
 
 import matplotlib  
 matplotlib.use('TkAgg')  
 import matplotlib.pyplot as plt
 
 from rbm import RBM
-from au import AutoEncoder
+from AutoEncoder import AutoEncoder
 from utilsnn import show_image, min_max_scale
 from DataFromTxt import DataFromTxt
 import input_data
@@ -31,6 +32,7 @@ class AEModel:
 
         self.visualise = False
         self.print_step = 100
+        self.model_path = "./out/au.chp"
         ############################
 
         # ensure output dir exists
@@ -190,8 +192,8 @@ class AEModel:
           print("          avg cost: %f" % (cost / iterations))
         
         if save:
-            self.autoencoder.save_weights('./out/au.chp')
-        #self.autoencoder.load_weights('./out/au.chp')
+            self.autoencoder.save_weights(self.model_path)
+        #self.autoencoder.load_weights(self.model_path)
         
         fig, ax = plt.subplots()
         
@@ -221,4 +223,18 @@ class AEModel:
         
         #raw_input("Press Enter to continue...")
         #plt.savefig('out/myfig')
-    
+
+ 
+    def predict(self, data_in):
+        # Load model        
+        self.autoencoder.load_weights(self.model_path)
+
+        print(" Input data shape: (%d, %d)" % (data_in.shape[0], data_in.shape[1]))
+        print(np.sum(data_in, axis=1))
+
+        print(" > Applying model to input data ...")
+        prediction = self.autoencoder.transform(data_in)
+        print(" Output data shape: (%d, %d)" % (prediction.shape[0], prediction.shape[1]))
+        print(np.sum(prediction, axis=1))
+
+        return prediction

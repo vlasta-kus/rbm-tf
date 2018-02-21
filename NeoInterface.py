@@ -1,10 +1,9 @@
 #!/usr/bin/python
 
+import os
+import numpy as np
 from pandas import DataFrame
 from py2neo import Graph, Node, Relationship, authenticate
-from bs4 import BeautifulSoup
-from bs4.element import Comment
-import os
 
 class NeoInterface:
     def __init__(self, stopwords_thr = 0.8):
@@ -129,12 +128,11 @@ class NeoInterface:
         #    while cursor.forward():
         #        print(cursor.current['BOW'])
 
-    def documentFromNeo(self, nodeId, node_label):
+    def documentFromNeo(self, nodeId, label):
         # nodeId = id(AnnotatedText)
         if not self.stopwords:
+            print("\n Retrieving stopwords:")
             self.stopwords = self.getStopwords(label)
-            print(" > Stopwords retrieved")
-            print(self.stopwords)
 
         if self.doSentences:
             query = self.query_localBOW_and_sentence_vectors.format(idSpec=repr(nodeId), stopwords=self.stopwords)
@@ -146,7 +144,11 @@ class NeoInterface:
             query = self.query_single_document_vector.format(id=nodeId, bow=self.BOW_global)
 
         df = DataFrame(self.graph.run(query).data())
-        return df.docId.values, self.vectorsOfStringsToNdarray(df.vector.values)
+        if df.empty:
+            print(" ERROR: requested document does not contain enough unique tags")
+            return None, None
+        #return df.docId.values, self.vectorsOfStringsToNdarray(df.vector.values)
+        return df.docId.values, np.vstack(df.vector.values)
 
     def getOutputFilename(self, outFile):
         if self.doSentences:
@@ -160,21 +162,29 @@ class NeoInterface:
 
     def vectorsOfStringsToNdarray(self, ndarray):
         result = []
-        for str in ndarray:
+        for strvec in ndarray:
             try:
-                result.append([float(j) for j in str[1:-1].split(",")])
+                result.append([float(j) for j in strvec[1:-1].split(",")])
             except:
-                print(" Error! Couldn't transfrom this string to a list of floats: %s" % str)
+                print(" Error! Couldn't transfrom this string to a list of floats: %s" % strvec)
                 continue
+        if len(result) == 0:
+            return None
         return np.vstack(result)
 
     def vectorsToNeoNode(self, propertyKey, IDs, vectors):
         # `IDs` and `vectors` are numpy ndarrays
         query = """
-        MATCH (n) WHERE id(n) = {id}
-        SET n.{key} = {vector}
+        MATCH ({name}) WHERE id({name}) = {id}
+        SET {name}.{key} = {vector}
         """
 
+        finalQuery = ""
+        name = ""
         for id, row in zip(IDs, vectors):
-            self.graph.run(query.format(id=id, key=propertyKey, vector=row))
+            if finalQuery != "":
+                finalQuery += "\nWITH " + name
+            name = "n"+repr(id)
+            finalQuery += query.format(name=name, id=id, key=propertyKey, vector=row.tolist())
+        self.graph.run(finalQuery)
 
