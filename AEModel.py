@@ -22,7 +22,7 @@ class AEModel:
         self.FLAGS = self.flags.FLAGS
         self.flags.DEFINE_string('data_dir', '/tmp/data/', 'Directory for storing data')
         #self.flags.DEFINE_integer('epochs', 50, 'The number of training epochs')
-        self.flags.DEFINE_integer('epochs', 100, 'The number of training epochs')
+        self.flags.DEFINE_integer('epochs', 1, 'The number of training epochs')
         #self.flags.DEFINE_integer('batchsize', 30, 'The batch size')
         self.flags.DEFINE_integer('batchsize', 10, 'The batch size')
         self.flags.DEFINE_boolean('restore_rbm', False, 'Whether to restore the RBM weights or not.')
