@@ -76,13 +76,15 @@ class AutoEncoder(object):
         self.total_updates = tf.Variable(0, trainable=False)
         self.cost = tf.sqrt(tf.reduce_mean(tf.square(self.x - self.reconstructed_x)))
         self.optimizer = optimizer.minimize(self.cost, global_step=self.total_updates)
-        self.summary_cost = tf.summary.scalar('cost', self.cost)
 
         # compute MSE and cosine similarity
         self.mse = tf.losses.mean_squared_error(self.reconstructed_x, self.x)
         self.cosSim = self.cosSim(self.reconstructed_x, self.x)
-        self.summary_mse = tf.summary.scalar('MSE', self.mse)
-        self.summary_cossim = tf.summary.scalar('cosine_similarity', self.cosSim)
+        # fill summary charts & histograms
+        with tf.name_scope("Finetuning"):
+            self.summary_cost = tf.summary.scalar('cost', self.cost)
+            self.summary_mse = tf.summary.scalar('MSE', self.mse)
+            self.summary_cossim = tf.summary.scalar('cosine_similarity', self.cosSim)
 
         # initalize variables
         init = tf.global_variables_initializer()

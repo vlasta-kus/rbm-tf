@@ -53,8 +53,7 @@ class RBM(object):
 
         # stochastic steepest ascent because we need to maximalize log likelihood of p(visible)
         # dlog(p)/dlog(w) = (visible * hidden)_data - (visible * hidden)_reconstruction
-        self.update_w = self.rbm_w + alpha * (self.w_positive_grad - self.w_negative_grad) / tf.to_float(
-            tf.shape(self.x)[0])
+        self.update_w = self.rbm_w + alpha * (self.w_positive_grad - self.w_negative_grad) / tf.to_float(tf.shape(self.x)[0])
         self.update_vb = self.rbm_vb + alpha * tf.reduce_mean(self.x - self.v1, 0)
         self.update_hb = self.rbm_hb + alpha * tf.reduce_mean(self.h0prob  - self.h1, 0)
 
@@ -64,7 +63,13 @@ class RBM(object):
 
         # cost
         self.err_sum = tf.reduce_mean(tf.square(self.x - self.v_sample))
-        self.summary_cost = tf.summary.scalar('cost_' + layer_names[0], self.err_sum)
+
+        # summaries for TensorBoard
+        with tf.name_scope("Pretraining_RBM_" + layer_names[0][-1]):
+            self.summary_cost = tf.summary.scalar('cost_RBM_' + layer_names[0][-1], self.err_sum)
+            self.summary_mean_w = tf.summary.scalar('mean_w__RBM_' + layer_names[0][-1], tf.reduce_mean(self.update_w))
+            self.summary_mean_vb = tf.summary.scalar('mean_vb__RBM_' + layer_names[0][-1], tf.reduce_mean(self.update_vb))
+            self.summary_mean_hb = tf.summary.scalar('mean_hb__RBM_' + layer_names[0][-1], tf.reduce_mean(self.update_hb))
 
         init = tf.global_variables_initializer()
         self.sess = tf.Session()
@@ -90,8 +95,7 @@ class RBM(object):
         # As the weights increase the mixing rate falls, so decreases in reconstruction error do not
         # necessarily mean that the model is improving. Small increases do not necessarily mean the model
         # is getting worse.
-        return self.sess.run(self.err_sum, feed_dict={self.x: batch, self.rbm_w: self.o_w,
-                                                      self.rbm_vb: self.o_vb, self.rbm_hb: self.o_hb})
+        return self.sess.run(self.err_sum, feed_dict={self.x: batch, self.rbm_w: self.o_w, self.rbm_vb: self.o_vb, self.rbm_hb: self.o_hb})
 
     def sample_prob(self, probs):
         return tf.nn.relu(tf.sign(probs - tf.random_uniform(tf.shape(probs))))
@@ -106,8 +110,7 @@ class RBM(object):
         return all_weights
 
     def transform(self, batch_x):
-        return self.sess.run(self.h_sample, {self.x: batch_x, self.rbm_w: self.o_w,
-                                             self.rbm_vb: self.o_vb, self.rbm_hb: self.o_hb})
+        return self.sess.run(self.h_sample, {self.x: batch_x, self.rbm_w: self.o_w, self.rbm_vb: self.o_vb, self.rbm_hb: self.o_hb})
 
     def restore_weights(self, path):
         saver = tf.train.Saver({self.layer_names[0]: self.weights['w'],
@@ -146,8 +149,13 @@ class RBM(object):
         self.o_hb = self.n_hb
 
         #err_sum = self.sess.run(self.err_sum, feed_dict={self.x: batch_x, self.rbm_w: self.n_w, self.rbm_vb: self.n_vb, self.rbm_hb: self.n_hb})
-        err_sum, summary = self.sess.run([self.err_sum, self.summary_cost], feed_dict={self.x: batch_x, self.rbm_w: self.n_w, self.rbm_vb: self.n_vb, self.rbm_hb: self.n_hb})
+        err_sum, summ_cost, summ_mean_w, summ_mean_vb, summ_mean_hb = self.sess.run([self.err_sum, 
+                    self.summary_cost, self.summary_mean_w, self.summary_mean_vb, self.summary_mean_hb],
+                    feed_dict={self.x: batch_x, self.rbm_w: self.n_w, self.rbm_vb: self.n_vb, self.rbm_hb: self.n_hb})
         if self.logger:
-            self.logger.add_summary(summary, tot_updates)
+            self.logger.add_summary(summ_cost, tot_updates)
+            self.logger.add_summary(summ_mean_vb, tot_updates)
+            self.logger.add_summary(summ_mean_hb, tot_updates)
+            self.logger.add_summary(summ_mean_w, tot_updates)
 
         return err_sum

@@ -39,8 +39,8 @@ class NeoInterface:
             with a, t, count(distinct s) as nSentences, sum(r.tf) as sumTf
             order by id(a), nSentences desc, sumTf desc
             with a, collect(id(t)) as tags
-            with a, tags[..60] as BOW
-            where size(BOW) = 60
+            with a, tags[..{dim}] as BOW
+            where size(BOW) = {dim}
 
             match (a)-[:CONTAINS_SENTENCE]->(s:Sentence)-[r:HAS_TAG]->(t:Tag)
             where not (id(t) in {stopwords}) and (ANY(pos IN t.pos WHERE pos IN ["NN", "NNS", "NNP", "NNPS", "JJ", "JJR", "JJS", "VB", "VBD", "VBG", "VBN", "VBP", "VBZ"]) OR size(t.pos) = 0)
@@ -88,7 +88,7 @@ class NeoInterface:
         # TO DO: decided BOW based on tf*idf?
         queryBOW_global = """
             match (:{label})-[:HAS_ANNOTATED_TEXT]->(a:AnnotatedText)-[:CONTAINS_SENTENCE]->(s:Sentence)-[:HAS_TAG]->(t:Tag)
-            where ANY(pos IN t.pos WHERE pos IN ["NN", "NNS", "NNP", "NNPS", "JJ", "JJR", "JJS"]) OR size(t.pos) = 0
+            where ANY(pos IN t.pos WHERE pos IN ["NN", "NNS", "NNP", "NNPS", "JJ", "JJR", "JJS", "VB", "VBD", "VBG", "VBN", "VBP", "VBZ"]) OR size(t.pos) = 0
             with t, count(distinct a) as docCount
             where not (id(t) in {stopwords})
             with t, docCount
@@ -101,9 +101,10 @@ class NeoInterface:
         return result['BOW']
 
     def trainDataFromNeo(self, label, outFile):
-        file_name = self.getOutputFilename(outFile)
+        #file_name = self.getOutputFilename(outFile)
+        file_name = outFile
         if os.path.exists(file_name):
-            print("\n > Output file %s already exists. Skipping data retrieval from Neo4j." % file_name)
+            print("\n > Output file %s already exists. Skipping data retrieval from Neo4j.\n" % file_name)
             return
 
         print("\n Retrieving stopwords:")
@@ -118,7 +119,7 @@ class NeoInterface:
             #    f.write(",".join(BOW))
             df = DataFrame(self.graph.run(self.query_document_vectors.format(label=label, bow=self.BOW_global)).data())
         elif self.doSentences:
-            df = DataFrame(self.graph.run(self.query_sentence_vectors.format(label=label, stopwords=self.stopwords, idSpec="id")).data())
+            df = DataFrame(self.graph.run(self.query_sentence_vectors.format(label=label, stopwords=self.stopwords, idSpec="id", dim=self.bowSize_sentences)).data())
 
         print("   Saving to a file %s" % file_name)
         df.to_csv(file_name)
@@ -135,7 +136,7 @@ class NeoInterface:
             self.stopwords = self.getStopwords(label)
 
         if self.doSentences:
-            query = self.query_localBOW_and_sentence_vectors.format(idSpec=repr(nodeId), stopwords=self.stopwords)
+            query = self.query_localBOW_and_sentence_vectors.format(idSpec=repr(nodeId), stopwords=self.stopwords, dim=self.bowSize_sentences)
         else:
             if not self.BOW_global:
                 self.getGlobalBOW(label)

@@ -57,7 +57,7 @@ class DataFromTxt:
         if not self.finalInput_train.empty:
         #    return self.dfToNumpy(self.finalInput_train)
             return DataIterator(self.finalInput_train)
-        print(" ERROR: train dataset does not exist!")
+        print("\n ERROR: train dataset does not exist!\n")
         return None
         #return self.dfToNumpy(self.finalInput)
 
@@ -65,7 +65,7 @@ class DataFromTxt:
         if not self.finalInput_test.empty:
         #    return self.dfToNumpy(self.finalInput_test)
             return DataIterator(self.finalInput_test)
-        print(" ERROR: test dataset does not exist!")
+        print("i\n ERROR: test dataset does not exist!\n")
         return None
 
     def dfToNumpy(self, df):
