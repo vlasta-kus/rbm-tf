@@ -9,8 +9,8 @@ id__data_to_process = 93848 #219132 # AnnotatedText
 
 # Neo4j handler
 neo = NeoInterface(stopwords_thr = 0.04)
-#neo.encodeSentences(50)
-neo.encodeDocuments(2000)
+neo.encodeSentences(40)
+#neo.encodeDocuments(2000)
 
 ### Data for training
 #file_with_train_data = "data/docVectors-NASA.out"
@@ -22,8 +22,8 @@ neo.trainDataFromNeo(node_label, file_with_train_data)
 model = AEModel()
 
 ### Training
-model.train(file_with_train_data, train_fraction=0.9, vector_nonzero_fraction=0.006, save=True) # for documents
-#model.train(file_with_train_data, train_fraction=0.9, vector_nonzero_fraction=0.1, save=True) # for sentences
+#model.train(file_with_train_data, train_fraction=0.9, vector_nonzero_fraction=0.006, save=True) # for documents
+model.train(file_with_train_data, train_fraction=0.9, vector_nonzero_fraction=0.1, save=True) # for sentences
 
 ### Predict
 #IDs, data = neo.documentFromNeo(id__data_to_process, node_label) # retrieve data as a numpy ndarray

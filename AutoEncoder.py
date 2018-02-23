@@ -4,9 +4,10 @@ from datetime import datetime
 
 
 class AutoEncoder(object):
-    def __init__(self, input_size, layer_sizes, layer_names, tied_weights=False, optimizer=tf.train.AdamOptimizer(),
-                 transfer_function=tf.nn.sigmoid):
+    def __init__(self, layer_in, layer_others, layer_names, tied_weights=False, optimizer=tf.train.AdamOptimizer(), transfer_function=tf.nn.sigmoid):
 
+        input_size  = layer_in['nodes']
+        layer_sizes = [d['nodes'] for d in layer_others]
         self.layer_names  = layer_names
         self.tied_weights = tied_weights
 

@@ -23,7 +23,7 @@ class AEModel:
         self.FLAGS = self.flags.FLAGS
         self.flags.DEFINE_string('data_dir', '/tmp/data/', 'Directory for storing data')
         #self.flags.DEFINE_integer('epochs', 50, 'The number of training epochs')
-        self.flags.DEFINE_integer('epochs', 20, 'The number of training epochs')
+        self.flags.DEFINE_integer('epochs', 30, 'The number of training epochs')
         #self.flags.DEFINE_integer('batchsize', 30, 'The batch size')
         self.flags.DEFINE_integer('batchsize', 10, 'The batch size')
         self.flags.DEFINE_boolean('restore_rbm', False, 'Whether to restore the RBM weights or not.')
@@ -31,6 +31,8 @@ class AEModel:
         self.learning_rate = 0.001
         self.finetune_optimizer = tf.train.AdamOptimizer(self.learning_rate)
         #self.finetune_optimizer = tf.train.AdagradOptimizer(self.learning_rate)
+        self.finetune_activation = tf.nn.sigmoid
+        #self.finetune_activation = tf.nn.relu
 
         self.visualise = False
         self.model_path = "./out/au.chp"
@@ -47,10 +49,33 @@ class AEModel:
         ### RBMs
         #architecture = [784, 900, 500, 250, 2] # MNIST
 
-        #architecture = [2000, 500, 250, 100, 40]
-        #architecture = [2000, 500, 250, 125, 30]
-        #architecture = [2000, 500, 250, 50]
-        architecture = [2000, 500, 200, 60, 20]
+        #architecture = [2000, 500, 250, 125, 40]
+        #architecture = [2000, 500, 200, 80, 2]
+
+        #architecture = [2000, 500, 250, 50] # NASA docs: cos_sim ~ 80% (training set), ~45% (test set) (0.001, Adam)
+
+        architecture = [{   'nodes': 2000,
+                            'activation': tf.nn.sigmoid,
+                            'alpha': 0.3
+                        },
+                        {   'nodes': 500,
+                            #'activation': tf.nn.sigmoid,
+                            'activation': tf.nn.relu,
+                            'alpha': 0.3
+                        },
+                        {   'nodes': 250,
+                            #'activation': tf.nn.sigmoid,
+                            'activation': tf.nn.relu,
+                            'alpha': 0.3
+                        },
+                        {   'nodes': 50,
+                            #'activation': tf.nn.sigmoid,
+                            'activation': tf.nn.relu,
+                            'alpha': 0.3
+                        }
+                       ]
+
+        #architecture = [2000, 500, 200, 60, 20]
         #architecture = [2000, 500, 200, 30]
         #architecture = [1000, 300, 100, 50]
 
@@ -61,21 +86,17 @@ class AEModel:
 
         self.rbmobjects = []
         for idx in range(len(architecture)-1):
-            self.rbmobjects.append(RBM(architecture[idx], architecture[idx+1], 
-                                        ['rbmw'+repr(idx), 'rbvb'+repr(idx), 'rbmhb'+repr(idx)],
-                                        alpha=0.3,
-                                        transfer_function=tf.nn.sigmoid)
-                                  )
+            self.rbmobjects.append(RBM(architecture[idx], architecture[idx+1], ['rbmw'+repr(idx), 'rbvb'+repr(idx), 'rbmhb'+repr(idx)]))
         
         if self.FLAGS.restore_rbm:
             for idx, obj in zip(range(len(architecture)-1), self.rbmobjects):
                 obj.restore_weights("./out/rbmw%d.chp" % idx)
         
         ### Autoencoder
-        weights = []
+        weights_names = []
         for idx in range(len(architecture)-1):
-            weights.append(['rbmw'+repr(idx), 'rbmhb'+repr(idx)])
-        self.autoencoder = AutoEncoder(architecture[0], architecture[1:], weights, tied_weights=False, optimizer=self.finetune_optimizer)
+            weights_names.append(['rbmw'+repr(idx), 'rbmhb'+repr(idx)])
+        self.autoencoder = AutoEncoder(architecture[0], architecture[1:], weights_names, tied_weights=False, optimizer=self.finetune_optimizer, transfer_function=self.finetune_activation)
 
         # share summary writers for visualising in TensorBoard
         for obj in self.rbmobjects:

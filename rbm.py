@@ -3,14 +3,20 @@ import numpy as np
 
 
 class RBM(object):
-    def __init__(self, n_input, n_hidden, layer_names, alpha=1.0, transfer_function=tf.nn.sigmoid):
-        self.n_input = n_input
-        self.n_hidden = n_hidden
-        self.transfer = transfer_function
-        self.layer_names = layer_names
+    def __init__(self, params1, params2, layer_names):
+        self.DEFAULT_ALPHA = 1.0
+        self.DEFAULT_ACTIVATION_VISIBLE = tf.nn.sigmoid
+        self.DEFAULT_ACTIVATION_HIDDEN  = tf.nn.sigmoid
 
-        network_weights = self._initialize_weights()
-        self.weights = network_weights
+        assert ("nodes" in params1) and ("nodes" in params2), "ERROR: RBM specifications are missing 'nodes'"
+        self.n_input = params1['nodes']
+        self.n_hidden = params2['nodes']
+        activation_visible = (params1['activation'] if 'activation' in params1 else self.DEFAULT_ACTIVATION_VISIBLE)
+        activation_hidden = (params2['activation'] if 'activation' in params2 else self.DEFAULT_ACTIVATION_HIDDEN)
+        alpha = (params1['alpha'] if 'alpha' in params1 else self.DEFAULT_ALPHA)
+
+        self.layer_names = layer_names
+        self.weights = self._initialize_weights()
 
         # placeholders
         self.x = tf.placeholder(tf.float32, [None, self.n_input], name="x_in")
@@ -32,20 +38,20 @@ class RBM(object):
         self.o_hb = np.zeros([self.n_hidden], np.float32)
 
         # model/training/performing one Gibbs sample.
-        # RBM is generative model, who tries to encode in weights the understanding of data.
+        # RBM is generative model, which tries to encode in weights the understanding of data.
         # RBMs typically learn better models if more steps of alternating Gibbs sampling are used.
-        # 1. set visible state to training sample(x) and compute hidden state(h0) of data
-        #    then we have binary units of hidden state computed. It is very important to make these
+        # 1. Set visible state to training sample(x) and compute hidden state(h0) of data.
+        #    Then we have binary units of hidden state computed. It is very important to make these
         #    hidden states binary, rather than using the probabilities themselves. (see Hinton paper)
-        self.h0prob = transfer_function(tf.matmul(self.x, self.rbm_w) + self.rbm_hb)
+        self.h0prob = activation_hidden(tf.matmul(self.x, self.rbm_w) + self.rbm_hb)
         self.h0 = self.sample_prob(self.h0prob)
-        # 2. compute new visible state of reconstruction based on computed hidden state reconstruction.
+        # 2. Compute new visible state of reconstruction based on computed hidden state reconstruction.
         #    However, it is common to use the probability, instead of sampling a binary value.
         #    So this can be binary or probability(so i choose to not use sampled probability)
-        self.v1 = transfer_function(tf.matmul(self.h0prob, tf.transpose(self.rbm_w)) + self.rbm_vb)
-        # 3. compute new hidden state of reconstruction based on computed visible reconstruction
+        self.v1 = activation_visible(tf.matmul(self.h0prob, tf.transpose(self.rbm_w)) + self.rbm_vb)
+        # 3. Compute new hidden state of reconstruction based on computed visible reconstruction.
         #    When hidden units are being driven by reconstructions, always use probabilities without sampling.
-        self.h1 = tf.nn.sigmoid(tf.matmul(self.v1, self.rbm_w) + self.rbm_hb)
+        self.h1 = activation_hidden(tf.matmul(self.v1, self.rbm_w) + self.rbm_hb)
 
         # compute gradients
         self.w_positive_grad = tf.matmul(tf.transpose(self.x), self.h0)
@@ -58,8 +64,8 @@ class RBM(object):
         self.update_hb = self.rbm_hb + alpha * tf.reduce_mean(self.h0prob  - self.h1, 0)
 
         # sampling functions
-        self.h_sample = transfer_function(tf.matmul(self.x, self.rbm_w) + self.rbm_hb)
-        self.v_sample = transfer_function(tf.matmul(self.h_sample, tf.transpose(self.rbm_w)) + self.rbm_vb)
+        self.h_sample = activation_hidden(tf.matmul(self.x, self.rbm_w) + self.rbm_hb)
+        self.v_sample = activation_visible(tf.matmul(self.h_sample, tf.transpose(self.rbm_w)) + self.rbm_vb)
 
         # cost
         self.err_sum = tf.reduce_mean(tf.square(self.x - self.v_sample))
@@ -67,9 +73,12 @@ class RBM(object):
         # summaries for TensorBoard
         with tf.name_scope("Pretraining_RBM_" + layer_names[0][-1]):
             self.summary_cost = tf.summary.scalar('cost_RBM_' + layer_names[0][-1], self.err_sum)
-            self.summary_mean_w = tf.summary.scalar('mean_w__RBM_' + layer_names[0][-1], tf.reduce_mean(self.update_w))
-            self.summary_mean_vb = tf.summary.scalar('mean_vb__RBM_' + layer_names[0][-1], tf.reduce_mean(self.update_vb))
-            self.summary_mean_hb = tf.summary.scalar('mean_hb__RBM_' + layer_names[0][-1], tf.reduce_mean(self.update_hb))
+            self.summary_mean_w = tf.summary.scalar('mean_w__RBM_' + layer_names[0][-1], tf.reduce_mean(self.rbm_w))
+            self.summary_mean_vb = tf.summary.scalar('mean_vb__RBM_' + layer_names[0][-1], tf.reduce_mean(self.rbm_vb))
+            self.summary_mean_hb = tf.summary.scalar('mean_hb__RBM_' + layer_names[0][-1], tf.reduce_mean(self.rbm_hb))
+            self.summary_w_updateToParam = tf.summary.scalar('mean_w_updateToParameters', tf.reduce_mean(self.update_w / self.rbm_w - 1))
+            self.summary_vb_updateToParam = tf.summary.scalar('mean_vb_updateToParameters', tf.reduce_mean(self.update_vb / self.rbm_vb - 1))
+            self.summary_hb_updateToParam = tf.summary.scalar('mean_hb_updateToParameters', tf.reduce_mean(self.update_hb / self.rbm_hb - 1))
 
         init = tf.global_variables_initializer()
         self.sess = tf.Session()
@@ -149,13 +158,16 @@ class RBM(object):
         self.o_hb = self.n_hb
 
         #err_sum = self.sess.run(self.err_sum, feed_dict={self.x: batch_x, self.rbm_w: self.n_w, self.rbm_vb: self.n_vb, self.rbm_hb: self.n_hb})
-        err_sum, summ_cost, summ_mean_w, summ_mean_vb, summ_mean_hb = self.sess.run([self.err_sum, 
-                    self.summary_cost, self.summary_mean_w, self.summary_mean_vb, self.summary_mean_hb],
+        err_sum, summ_cost, summ_mean_w, summ_mean_vb, summ_mean_hb, summ_w_updToPar, summ_vb_updToPar, summ_hb_updToPar = self.sess.run([self.err_sum, 
+                    self.summary_cost, self.summary_mean_w, self.summary_mean_vb, self.summary_mean_hb, self.summary_w_updateToParam, self.summary_vb_updateToParam, self.summary_hb_updateToParam],
                     feed_dict={self.x: batch_x, self.rbm_w: self.n_w, self.rbm_vb: self.n_vb, self.rbm_hb: self.n_hb})
         if self.logger:
             self.logger.add_summary(summ_cost, tot_updates)
             self.logger.add_summary(summ_mean_vb, tot_updates)
             self.logger.add_summary(summ_mean_hb, tot_updates)
             self.logger.add_summary(summ_mean_w, tot_updates)
+            self.logger.add_summary(summ_w_updToPar, tot_updates)
+            self.logger.add_summary(summ_vb_updToPar, tot_updates)
+            self.logger.add_summary(summ_hb_updToPar, tot_updates)
 
         return err_sum
