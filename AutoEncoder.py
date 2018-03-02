@@ -4,31 +4,33 @@ from datetime import datetime
 
 
 class AutoEncoder(object):
-    def __init__(self, layer_in, layer_others, layer_names, tied_weights=False, optimizer=tf.train.AdamOptimizer(), transfer_function=tf.nn.sigmoid):
+    def __init__(self, architecture, layer_names, tied_weights=False, optimizer=tf.train.AdamOptimizer()):
+        DEFAULT_ACTIVATION = tf.nn.sigmoid
 
-        input_size  = layer_in['nodes']
-        layer_sizes = [d['nodes'] for d in layer_others]
+        #input_size  = architecture[0]['nodes']
+        #layer_sizes = [d['nodes'] for d in architecture[1:]]
         self.layer_names  = layer_names
         self.tied_weights = tied_weights
 
-        self.architecture = [input_size] + layer_sizes[:]
         self.datetime = "000" #datetime.now().strftime(r"%y%m%d_%H%M")
         self.step = 0
 
+        assert len(architecture[1:]) == len(layer_names)
+
         # Build the encoding layers
-        self.x = tf.placeholder("float", [None, input_size], name="x_in")
+        self.x = tf.placeholder("float", [None, architecture[0]['nodes']], name="x_in")
         next_layer_input = self.x
 
-        assert len(layer_sizes) == len(layer_names)
-
+        # Build encoder (hidden layers)
         self.encoding_matrices = []
         self.encoding_biases = []
-        for i in range(len(layer_sizes)):
-            dim = layer_sizes[i]
+        for i, layer in enumerate(architecture[1:]):
             input_dim = int(next_layer_input.get_shape()[1])
+            dim = layer['nodes']
+            transfer_function = (layer['activation'] if 'activation' in layer else DEFAULT_ACTIVATION)
 
             # Initialize W using xavier initialization
-            W = tf.Variable(xavier_init(input_dim, dim, transfer_function), name=layer_names[i][0])
+            W = tf.Variable(initial_value=xavier_init(input_dim, dim, transfer_function), name=layer_names[i][0])
 
             # Initialize b to zero
             b = tf.Variable(tf.zeros([dim]), name=layer_names[i][1])
@@ -46,20 +48,21 @@ class AutoEncoder(object):
         self.encoded_x = next_layer_input
 
         # build the reconstruction layers by reversing the reductions
-        layer_sizes.reverse()
+        architecture.reverse()
         self.encoding_matrices.reverse()
 
         self.decoding_matrices = []
         self.decoding_biases = []
 
-        for i, dim in enumerate(layer_sizes[1:] + [int(self.x.get_shape()[1])]):
+        for i, layer in enumerate(architecture[1:]):
             W = None
+            transfer_function = (layer['activation'] if 'activation' in layer else DEFAULT_ACTIVATION)
             # if we are using tied weights, so just lookup the encoding matrix for this step and transpose it
             if tied_weights:
                 W = tf.identity(tf.transpose(self.encoding_matrices[i]))
             else:
                 W = tf.Variable(xavier_init(self.encoding_matrices[i].get_shape()[1].value,self.encoding_matrices[i].get_shape()[0].value, transfer_function))
-            b = tf.Variable(tf.zeros([dim]))
+            b = tf.Variable(tf.zeros([layer['nodes']]))
             self.decoding_matrices.append(W)
             self.decoding_biases.append(b)
 
@@ -69,13 +72,16 @@ class AutoEncoder(object):
         # need to reverse the encoding matrices back for loading weights
         self.encoding_matrices.reverse()
         self.decoding_matrices.reverse()
+        # also reverse back the original architecture design
+        architecture.reverse()
 
         # the fully encoded and reconstructed value of x is here:
         self.reconstructed_x = next_layer_input
 
         # compute cost and run optimizer
         self.total_updates = tf.Variable(0, trainable=False)
-        self.cost = tf.sqrt(tf.reduce_mean(tf.square(self.x - self.reconstructed_x)))
+        #self.cost = tf.losses.mean_squared_error(self.reconstructed_x, self.x)
+        self.cost = tf.reduce_mean(self.crossEntropy(self.reconstructed_x, self.x))
         self.optimizer = optimizer.minimize(self.cost, global_step=self.total_updates)
 
         # compute MSE and cosine similarity
@@ -123,6 +129,14 @@ class AutoEncoder(object):
     def cosSim(self, x1, x2):
         return 1 - tf.losses.cosine_distance(tf.nn.l2_normalize(x1, 1), tf.nn.l2_normalize(x2, 1), axis=1)
         #return 1 - tf.losses.cosine_distance(tf.nn.l2_normalize(x1, 1), tf.nn.l2_normalize(x2, 1), axis=1, reduction=tf.losses.Reduction.MEAN)
+
+    def crossEntropy(self, obs, actual, offset=1e-7):
+        """Binary cross-entropy, per training example"""
+        # (tf.Tensor, tf.Tensor, float) -> tf.Tensor
+        with tf.name_scope("cross_entropy"):
+            # bound by clipping to avoid nan
+            obs_ = tf.clip_by_value(obs, offset, 1 - offset)
+            return -tf.reduce_sum(actual * tf.log(obs_) + (1 - actual) * tf.log(1 - obs_), 1)
 
     def print_weights(self):
         print('Matrices')

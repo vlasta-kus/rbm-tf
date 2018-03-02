@@ -15,6 +15,8 @@ class RBM(object):
         activation_hidden = (params2['activation'] if 'activation' in params2 else self.DEFAULT_ACTIVATION_HIDDEN)
         alpha = (params1['alpha'] if 'alpha' in params1 else self.DEFAULT_ALPHA)
 
+        print(" Creating RBM: (%d, %d)" % (self.n_input, self.n_hidden))
+
         self.layer_names = layer_names
         self.weights = self._initialize_weights()
 

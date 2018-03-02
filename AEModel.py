@@ -31,8 +31,6 @@ class AEModel:
         self.learning_rate = 0.001
         self.finetune_optimizer = tf.train.AdamOptimizer(self.learning_rate)
         #self.finetune_optimizer = tf.train.AdagradOptimizer(self.learning_rate)
-        self.finetune_activation = tf.nn.sigmoid
-        #self.finetune_activation = tf.nn.relu
 
         self.visualise = False
         self.model_path = "./out/au.chp"
@@ -54,26 +52,45 @@ class AEModel:
 
         #architecture = [2000, 500, 250, 50] # NASA docs: cos_sim ~ 80% (training set), ~45% (test set) (0.001, Adam)
 
-        architecture = [{   'nodes': 2000,
+        """
+        self.architecture = [
+                        {   'nodes': 2000,
                             'activation': tf.nn.sigmoid,
-                            'alpha': 0.3
+                            #'activation': tf.nn.softsign,
+                            'alpha': 0.3#0.3
                         },
                         {   'nodes': 500,
                             #'activation': tf.nn.sigmoid,
-                            'activation': tf.nn.relu,
+                            #'activation': tf.nn.softsign,
+                            #'activation': tf.nn.relu,
                             'alpha': 0.3
                         },
                         {   'nodes': 250,
                             #'activation': tf.nn.sigmoid,
-                            'activation': tf.nn.relu,
+                            #'activation': tf.nn.softsign,
+                            #'activation': tf.nn.relu,
                             'alpha': 0.3
                         },
                         {   'nodes': 50,
                             #'activation': tf.nn.sigmoid,
-                            'activation': tf.nn.relu,
+                            #'activation': tf.nn.relu,
                             'alpha': 0.3
-                        }
+                        } # 2000->500->250->50: ~94% train cos_sim, 45% test cos_sim, sigmoid, Adam, cross-entropy (but also MSE)
+
+                        #{   'nodes': 80,
+                            #'activation': tf.nn.sigmoid,
+                            #'activation': tf.nn.softsign,
+                            #'activation': tf.nn.relu,
+                        #    'alpha': 0.3
+                        #},
+                        #{   'nodes': 20,
+                            #'activation': tf.nn.sigmoid,
+                            #'activation': tf.nn.softsign,
+                            #'activation': tf.nn.relu,
+                        #    'alpha': 0.3
+                        #} # 2000->500->250->80->20: ~74% train cos_sim, ~35% test cos_sim, Adam
                        ]
+        """
 
         #architecture = [2000, 500, 200, 60, 20]
         #architecture = [2000, 500, 200, 30]
@@ -85,18 +102,18 @@ class AEModel:
         #architecture = [50, 100, 40, 20, 5]
 
         self.rbmobjects = []
-        for idx in range(len(architecture)-1):
-            self.rbmobjects.append(RBM(architecture[idx], architecture[idx+1], ['rbmw'+repr(idx), 'rbvb'+repr(idx), 'rbmhb'+repr(idx)]))
+        for idx in range(len(self.architecture)-1):
+            self.rbmobjects.append(RBM(self.architecture[idx], self.architecture[idx+1], ['rbmw'+repr(idx), 'rbvb'+repr(idx), 'rbmhb'+repr(idx)]))
         
         if self.FLAGS.restore_rbm:
-            for idx, obj in zip(range(len(architecture)-1), self.rbmobjects):
+            for idx, obj in zip(range(len(self.architecture)-1), self.rbmobjects):
                 obj.restore_weights("./out/rbmw%d.chp" % idx)
         
         ### Autoencoder
         weights_names = []
-        for idx in range(len(architecture)-1):
+        for idx in range(len(self.architecture)-1):
             weights_names.append(['rbmw'+repr(idx), 'rbmhb'+repr(idx)])
-        self.autoencoder = AutoEncoder(architecture[0], architecture[1:], weights_names, tied_weights=False, optimizer=self.finetune_optimizer, transfer_function=self.finetune_activation)
+        self.autoencoder = AutoEncoder(self.architecture, weights_names, tied_weights=False, optimizer=self.finetune_optimizer)
 
         # share summary writers for visualising in TensorBoard
         for obj in self.rbmobjects:
@@ -156,7 +173,7 @@ class AEModel:
         
         fig, ax = plt.subplots()
         
-        if self.autoencoder.architecture[-1] == 2:
+        if self.architecture[-1]['nodes'] == 2:
             print("\n > Test set - x coordinates:")
             print(self.autoencoder.transform(teX)[:, 0])
             print("\n > Test set - y coordinates:")
