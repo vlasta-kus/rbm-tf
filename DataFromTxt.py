@@ -8,26 +8,29 @@ class DataFromTxt:
     def __init__(self, path, nonzeros_frac=0.1):
         self.path = path
         self.min_nonzero_frac = nonzeros_frac
-        self.inputDf = pd.DataFrame({'lineIdx': [], 'vector': []})
+        self.inputDf = pd.DataFrame({'docId': [], 'vector': []})
         self.dimension = 0
 
         # process the input file
         print(" Processing input file ...")
-        with open(path, 'r') as f:
-            idx = -1
-            for line in f:
-                idx += 1
-                if idx == 0: # ignore head (column names)
-                    continue
-                vec = self.processLine(line, idx)
-                if vec:
-                    self.inputDf = self.inputDf.append({'lineIdx': idx, 'vector': np.array(vec)}, ignore_index=True)
+        self.inputDf = pd.DataFrame.from_csv(path)
+        #with open(path, 'r') as f:
+        #    idx = -1
+        #    for line in f:
+        #        idx += 1
+        #        if idx == 0: # ignore head (column names)
+        #            continue
+        #        vec = self.processLine(line, idx)
+        #        if vec:
+        #            self.inputDf = self.inputDf.append({'docId': idx, 'vector': np.array(vec)}, ignore_index=True)
 
-        print(" Input DataFrame size is %d." % self.inputDf.lineIdx.count())
+        print(" Input DataFrame size is %d." % self.inputDf.docId.count())
 
         # get prevailing vector dimension
+        self.inputDf['vector'] = self.inputDf['vector'].apply(lambda vec: [float(x) for x in vec[1:-1].split(",")])
         self.inputDf['dim'] = self.inputDf['vector'].apply(lambda vec: len(vec))
-        self.dimension = np.argmax(self.inputDf.groupby('dim').lineIdx.count())
+        #print(self.inputDf.head(5))
+        self.dimension = np.argmax(self.inputDf.groupby('dim').docId.count())
         print(" Prevailing vector dimension: %d" % self.dimension)
         
         # final cleaning: 
@@ -35,7 +38,7 @@ class DataFromTxt:
         #       * only documents that contain some minimal number of non-null elements
         self.inputDf['n_nonzero'] = self.inputDf['vector'].apply(lambda vec: np.count_nonzero(vec))
         self.finalInput = self.inputDf.query('dim == %d & n_nonzero >= %d' % (self.dimension, self.min_nonzero_frac * self.dimension)) #[self.inputDf.dim == self.dimension]
-        self.n_documents = self.finalInput.lineIdx.count()
+        self.n_documents = self.finalInput.docId.count()
         print(" n_documents: %d" % self.n_documents)
 
         # placeholders for train and test sets
@@ -48,8 +51,8 @@ class DataFromTxt:
         print(" Splitting to train and test ...")
         self.finalInput_train = self.finalInput.sample(frac=frac, random_state=123)
         self.finalInput_test = self.finalInput.drop(self.finalInput_train.index)
-        self.n_documents_train = self.finalInput_train.lineIdx.count()
-        self.n_documents_test = self.finalInput_test.lineIdx.count()
+        self.n_documents_train = self.finalInput_train.docId.count()
+        self.n_documents_test = self.finalInput_test.docId.count()
         print(" Train dataset size: %d" % self.n_documents_train)
         print(" Test dataset size: %d" % self.n_documents_test)
 
@@ -67,6 +70,12 @@ class DataFromTxt:
             return DataIterator(self.finalInput_test)
         print("i\n ERROR: test dataset does not exist!\n")
         return None
+
+    def getAllIDs(self):
+        return self.finalInput.docId.values
+
+    def getAllVectors(self):
+        return np.vstack(self.finalInput.vector.values)
 
     def dfToNumpy(self, df):
         return np.vstack(df.vector.values)
@@ -88,7 +97,7 @@ class DataIterator:
     """ Simple custom data iterator """
     def __init__(self, df):
         self.df = df
-        self.n_documents = df.lineIdx.count()
+        self.n_documents = df.docId.count()
         self.current_position = 0
         self._epochs_completed = 0
 

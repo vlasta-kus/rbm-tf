@@ -61,7 +61,7 @@ class AEModel:
                         },
                         {   'nodes': 500,
                             #'activation': tf.nn.sigmoid,
-                            #'activation': tf.nn.softsign,
+                            #'act/vation': tf.nn.softsign,
                             #'activation': tf.nn.relu,
                             'alpha': 0.3
                         },
@@ -100,6 +100,34 @@ class AEModel:
         #architecture = [50, 25, 5]      # cos_sim = 69% (learning_rate=0.01, Adam)
         #architecture = [50, 25, 10, 5] # cos_sim = 68% (learning_rate=0.005, Adam)
         #architecture = [50, 100, 40, 20, 5]
+
+        """
+        self.architecture = [
+                            {'nodes': 60, 'alpha': 0.3},
+                            #{'nodes': 140, 'alpha': 0.3},
+                            {'nodes': 40, 'alpha': 0.3},
+                            {'nodes': 20, 'alpha': 0.3},
+                            {'nodes': 10, 'alpha': 0.3}
+                        ]
+        """
+
+        """
+        self.architecture = [
+                            {'nodes': 50, 'alpha': 0.3},
+                            {'nodes': 25, 'alpha': 0.3},
+                            {'nodes': 10, 'alpha': 0.3},
+                            {'nodes': 5, 'alpha': 0.3}
+                        ]
+        """
+
+        self.architecture = [
+                            {'nodes': 800, 'alpha': 0.3},
+                            {'nodes': 400, 'alpha': 0.3},
+                            #{'nodes': 200, 'alpha': 0.3},
+                            {'nodes': 200, 'alpha': 0.3},
+                            {'nodes': 80, 'alpha': 0.3}
+                        ]
+
 
         self.rbmobjects = []
         for idx in range(len(self.architecture)-1):
@@ -240,3 +268,9 @@ class AEModel:
         print(np.sum(prediction, axis=1))
 
         return prediction
+
+    def predictDataset(self, path, vector_nonzero_fraction):
+        data = DataFromTxt(path, vector_nonzero_fraction)
+        vecs = data.getAllVectors()
+        prediction = self.predict(vecs)
+        return data.getAllIDs(), prediction.astype(float)

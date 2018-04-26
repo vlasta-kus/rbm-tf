@@ -11,28 +11,57 @@ class NeoInterface:
         self.graph = Graph("http://localhost:7474/db/data/")
 
         self.stopwords_docFrequencyThreshold = stopwords_thr
-        self.bowSize_sentences = 60
-        self.bowSize_documents = 2000
+        self.bowSize = 2000
 
         self.doSentences = True
         self.doDocuments = False
+        self.localVocabularies = False
 
-        self.stopwords = None
+        self.stopwords = []
         self.BOW_global = None
 
+        ### Global BOW: documents
+        self.query_BOW_documents = """
+            match (:{label})
+            with count(*) as nDocs
+            match (:{label})-[:HAS_ANNOTATED_TEXT]->(a:AnnotatedText)-[:CONTAINS_SENTENCE]->(:Sentence)-[:HAS_TAG]->(t:Tag)
+            with t.id as tagId, count(distinct a) as docCount, 1.0f * count(distinct a) / nDocs as docFreq
+            where docFreq < {freqThr}
+            with tagId, docCount
+            order by docCount desc
+            return collect(tagId)[..{dim}] as BOW
+        """
+        ### Global BOW: sentences
+        self.query_BOW_sentences = """
+            match (s:Sentence)
+            with count(*) as nSent
+            match (s:Sentence)-[:HAS_TAG]->(t:Tag)
+            with t.id as tagId, count(distinct s) as sentCount, 1.0f * count(distinct s) / nSent as sentFreq
+            where sentFreq < {freqThr}
+            with tagId, sentCount
+            order by sentCount desc
+            return collect(tagId)[..{dim}] as BOW
+        """
+
+        ### Generic queries (BOW is provided from the outside)
         self.query_document_vectors = """
             match (n:{label})-[:HAS_ANNOTATED_TEXT]->(a:AnnotatedText)-[:CONTAINS_SENTENCE]->(s:Sentence)-[:HAS_TAG]->(t:Tag)
-            with a, collect(distinct id(t)) as tags
+            with a, collect(distinct t.id) as tags
             return id(a) as docId, extract(t in {bow} | (case when t in tags then 1 else 0 end)) as vector
         """
         self.query_single_document_vector = """
             match (n:{label})-[:HAS_ANNOTATED_TEXT]->(a:AnnotatedText)-[:CONTAINS_SENTENCE]->(s:Sentence)-[:HAS_TAG]->(t:Tag)
             where id(a) = {id}
-            with a, collect(distinct id(t)) as tags
+            with a, collect(distinct t.id) as tags
             return id(a) as docId, extract(t in {bow} | (case when t in tags then 1 else 0 end)) as vector
         """
+        self.query_sentence_vectors = """
+            match (s:Sentence)-[:HAS_TAG]->(t:Tag)
+            with s, collect(distinct t.id) as tags
+            return id(s) as docId, extract(t in {bow} | (case when t in tags then 1 else 0 end)) as vector
+        """
        
-        ### Queries for sentence-wise vectors 
+        ### Queries for sentence-wise vectors: _local_ document vocabularies (BOWs)
         self.query_localBOW_and_sentence_vectors = """
             match (a:AnnotatedText)-[:CONTAINS_SENTENCE]->(s:Sentence)-[r:HAS_TAG]->(t:Tag)
             where id(a) = {idSpec} and not (id(t) in {stopwords}) and (ANY(pos IN t.pos WHERE pos IN ["NN", "NNS", "NNP", "NNPS", "JJ", "JJR", "JJS", "VB", "VBD", "VBG", "VBN", "VBP", "VBZ"]) OR size(t.pos) = 0)
@@ -47,7 +76,7 @@ class NeoInterface:
             with BOW, a, s, collect(distinct id(t)) as tags
             return id(s) as docId, extract(t in BOW | (case when t in tags then 1 else 0 end)) as vector
         """
-        self.query_sentence_vectors = """
+        self.query_sentence_vectors_local = """
             // create batches
             match (n:{label})-[:HAS_ANNOTATED_TEXT]->(a:AnnotatedText)
             //where not n.processed = true
@@ -60,15 +89,18 @@ class NeoInterface:
             %s
         """ % self.query_localBOW_and_sentence_vectors
 
-    def encodeSentences(self, dimension=60):
-        self.bowSize_sentences = dimension
+    def encodeSentences(self, dimension=800):
+        self.bowSize = dimension
         self.doSentences = True
         self.doDocuments = False
         
     def encodeDocuments(self, dimension = 2000):
-        self.bowSize_documents = dimension
+        self.bowSize = dimension
         self.doSentences = False
         self.doDocuments = True
+
+    def doLocalVocabularies(self, val):
+        self.localVocabularies = val
 
     def getStopwords(self, label):
         query_stopwords = """
@@ -76,29 +108,26 @@ class NeoInterface:
             with count(*) as nDocs
             match (n:{label})-[:HAS_ANNOTATED_TEXT]->(a:AnnotatedText)-[:CONTAINS_SENTENCE]->(:Sentence)-[r:HAS_TAG]->(t:Tag)
             with t, 1.0 * count(distinct n) / nDocs as docFrequency
-            where docFrequency > {thr}
+            where docFrequency >= {freqThr}
             return collect(id(t)) as stoptagsIDs, collect(t.value) as stoptagsValues
         """
-        result = self.graph.run(query_stopwords.format(label=label, thr = self.stopwords_docFrequencyThreshold)).data()[0]
+        result = self.graph.run(query_stopwords.format(label=label, freqThr = self.stopwords_docFrequencyThreshold)).data()[0]
         print(result['stoptagsValues'])
         return result['stoptagsIDs']
 
     def getGlobalBOW(self, label):
-        # must be called _after_ stopwords were extracted
-        # TO DO: decided BOW based on tf*idf?
-        queryBOW_global = """
-            match (:{label})-[:HAS_ANNOTATED_TEXT]->(a:AnnotatedText)-[:CONTAINS_SENTENCE]->(s:Sentence)-[:HAS_TAG]->(t:Tag)
-            where ANY(pos IN t.pos WHERE pos IN ["NN", "NNS", "NNP", "NNPS", "JJ", "JJR", "JJS", "VB", "VBD", "VBG", "VBN", "VBP", "VBZ"]) OR size(t.pos) = 0
-            with t, count(distinct a) as docCount
-            where not (id(t) in {stopwords})
-            with t, docCount
-            order by docCount desc
-            with collect(id(t)) as tags, collect(t.value) as tagValues
-            return tags[..{dim}] as BOW, tagValues[..{dim}] as BOW_values
-        """
-        result = self.graph.run(queryBOW_global.format(stopwords=self.stopwords, dim=self.bowSize_documents, label=label)).data()[0]
-        print(result['BOW_values'])
-        return result['BOW']
+        print("\n Retrieving BOW:")
+        if self.doDocuments:
+            result = self.graph.run(self.query_BOW_documents.format(stopwords=self.stopwords, freqThr = self.stopwords_docFrequencyThreshold, dim=self.bowSize, label=label)).data()[0]
+        elif self.doSentences:
+            result = self.graph.run(self.query_BOW_sentences.format(stopwords=self.stopwords, freqThr = self.stopwords_docFrequencyThreshold, dim=self.bowSize, label=label)).data()[0]
+        self.BOW_global = [x.encode("utf-8") for x in result['BOW']]
+        print(" > Global BOW retrieved:")
+        print(self.BOW_global)
+        #print("   Saving to a file")
+        #with open('BOW.out', 'w') as f:
+        #    f.write(",".join(BOW))
+        return
 
     def trainDataFromNeo(self, label, outFile):
         #file_name = self.getOutputFilename(outFile)
@@ -107,19 +136,21 @@ class NeoInterface:
             print("\n > Output file %s already exists. Skipping data retrieval from Neo4j.\n" % file_name)
             return
 
-        print("\n Retrieving stopwords:")
-        self.stopwords = self.getStopwords(label)
+        if self.localVocabularies:
+            print("\n Retrieving stopwords:")
+            self.stopwords = self.getStopwords(label)
+        else:
+            if not self.BOW_global:
+                self.getGlobalBOW(label)
 
         print("\n > Retrieving document vectors")
         if self.doDocuments:
-            print("\n Retrieving BOW:")
-            self.BOW_global = self.getGlobalBOW(label)
-            #print("   Saving to a file")
-            #with open('BOW.out', 'w') as f:
-            #    f.write(",".join(BOW))
             df = DataFrame(self.graph.run(self.query_document_vectors.format(label=label, bow=self.BOW_global)).data())
         elif self.doSentences:
-            df = DataFrame(self.graph.run(self.query_sentence_vectors.format(label=label, stopwords=self.stopwords, idSpec="id", dim=self.bowSize_sentences)).data())
+            if self.localVocabularies:
+                df = DataFrame(self.graph.run(self.query_sentence_vectors_local.format(label=label, stopwords=self.stopwords, idSpec="id", dim=self.bowSize)).data())
+            else:
+                df = DataFrame(self.graph.run(self.query_sentence_vectors.format(bow=self.BOW_global)).data())
 
         print("   Saving to a file %s" % file_name)
         df.to_csv(file_name)
@@ -131,17 +162,16 @@ class NeoInterface:
 
     def documentFromNeo(self, nodeId, label):
         # nodeId = id(AnnotatedText)
-        if not self.stopwords:
+        if self.localVocabularies:
             print("\n Retrieving stopwords:")
             self.stopwords = self.getStopwords(label)
-
-        if self.doSentences:
-            query = self.query_localBOW_and_sentence_vectors.format(idSpec=repr(nodeId), stopwords=self.stopwords, dim=self.bowSize_sentences)
         else:
             if not self.BOW_global:
                 self.getGlobalBOW(label)
-                print(" > Global BOW retrieved:")
-                print(self.BOW_global)
+
+        if self.doSentences:
+            query = self.query_localBOW_and_sentence_vectors.format(idSpec=repr(nodeId), stopwords=self.stopwords, dim=self.bowSize)
+        else:
             query = self.query_single_document_vector.format(id=nodeId, bow=self.BOW_global)
 
         df = DataFrame(self.graph.run(query).data())
@@ -153,9 +183,9 @@ class NeoInterface:
 
     def getOutputFilename(self, outFile):
         if self.doSentences:
-            app = "__sentences_" + repr(self.bowSize_sentences)
+            app = "__sentences_" + repr(self.bowSize)
         else:
-            app = "__documents_" + repr(self.bowSize_documents)
+            app = "__documents_" + repr(self.bowSize)
         file_name = outFile
         if outFile[-4:] == ".txt":
             file_name = file_name[:-4] + app + ".txt"
@@ -179,13 +209,19 @@ class NeoInterface:
         MATCH ({name}) WHERE id({name}) = {id}
         SET {name}.{key} = {vector}
         """
-
+        print("\n > Saving results for %d documents back to Neo4j." % len(IDs))
+        batch_size = 200
         finalQuery = ""
         name = ""
-        for id, row in zip(IDs, vectors):
+        i = 0
+        for id, row in zip(IDs, np.around(vectors, decimals=6)):
+            if i % batch_size == 0 and finalQuery != "":
+                print("  Saving another batch. Processed %d documents so far." % i)
+                self.graph.run(finalQuery)
+                finalQuery = ""
             if finalQuery != "":
                 finalQuery += "\nWITH " + name
             name = "n"+repr(id)
             finalQuery += query.format(name=name, id=id, key=propertyKey, vector=row.tolist())
-        self.graph.run(finalQuery)
+            i += 1
 
